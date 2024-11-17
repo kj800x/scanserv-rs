@@ -1,6 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::simple_broker::SimpleBroker;
+use crate::{
+    scanners::{ScannerInfo, ScannerManager},
+    scans,
+    simple_broker::SimpleBroker,
+    AssetsDir,
+};
 use async_graphql::{Context, Enum, Object, Result, Schema, Subscription, ID};
 use futures_util::{lock::Mutex, Stream, StreamExt};
 use slab::Slab;
@@ -39,6 +44,41 @@ impl QueryRoot {
         let books = ctx.data_unchecked::<Storage>().lock().await;
         books.iter().map(|(_, book)| book).cloned().collect()
     }
+
+    async fn scanners(&self, ctx: &Context<'_>) -> Vec<ScannerInfo> {
+        let scanner_manager = ctx.data_unchecked::<ScannerManager>();
+        scanner_manager.list_scanners().await
+    }
+
+    async fn staleness(&self, ctx: &Context<'_>) -> u64 {
+        let scanner_manager = ctx.data_unchecked::<ScannerManager>();
+        let last_refreshed = scanner_manager.last_refreshed().await;
+        last_refreshed.elapsed().as_millis() as u64
+    }
+
+    async fn scans(&self, ctx: &Context<'_>) -> Vec<crate::scans::Scan> {
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+        let conn = pool.get().unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT id, status, path, scanned_at FROM scans")
+            .unwrap();
+
+        let scans = stmt
+            .query_map([], |row| {
+                Ok(scans::Scan {
+                    id: row.get(0)?,
+                    status: row.get(1)?,
+                    path: row.get(2)?,
+                    scanned_at: row.get(3)?,
+                })
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+
+        scans
+    }
 }
 
 pub struct MutationRoot;
@@ -75,6 +115,13 @@ impl MutationRoot {
         } else {
             Ok(false)
         }
+    }
+
+    async fn scan(&self, ctx: &Context<'_>, name: String) -> i32 {
+        let scanner_manager = ctx.data_unchecked::<ScannerManager>();
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+        let assets_dir = ctx.data_unchecked::<AssetsDir>();
+        scanner_manager.scan(&name, &pool, &assets_dir).await
     }
 }
 
