@@ -36,7 +36,7 @@ impl Scan {
         }
     }
 
-    pub fn save(&self, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Result<i32> {
+    pub fn save(&mut self, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Result<i32> {
         let conn = pool.get().unwrap();
 
         let scan_parameters_str = serde_json::to_string(&self.scan_parameters).unwrap();
@@ -55,6 +55,7 @@ impl Scan {
                     params![self.status, self.path.as_relative_path(), self.scanner, scan_parameters_str, self.scanned_at, ],
                     |row| row.get(0),
                 )?;
+                self.id = Some(id);
                 id
             }
         })

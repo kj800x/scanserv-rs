@@ -84,6 +84,26 @@ impl QueryRoot {
 
         scans
     }
+
+    async fn dividers(&self, ctx: &Context<'_>) -> Vec<crate::scan_dividers::ScanDivider> {
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+        let conn = pool.get().unwrap();
+
+        let mut stmt = conn.prepare("SELECT id, ts FROM scan_dividers").unwrap();
+
+        let dividers = stmt
+            .query_map([], |row| {
+                Ok(crate::scan_dividers::ScanDivider {
+                    id: row.get(0)?,
+                    ts: row.get(1)?,
+                })
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+
+        dividers
+    }
 }
 
 pub struct MutationRoot;
@@ -131,6 +151,16 @@ impl MutationRoot {
         scanner_manager
             .scan(&name, parameters, &pool, &assets_dir)
             .await
+    }
+
+    async fn add_divider(&self, ctx: &Context<'_>) -> i32 {
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+
+        let ts = chrono::Utc::now();
+
+        crate::scan_dividers::ScanDivider::new(ts)
+            .save(&pool)
+            .unwrap()
     }
 }
 

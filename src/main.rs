@@ -1,5 +1,6 @@
 mod asset_path;
 mod migrations;
+mod scan_dividers;
 mod scanners;
 mod scans;
 mod schema;

@@ -96,7 +96,7 @@ impl ScannerManager {
             chrono::Utc::now(),
         );
 
-        scan.id = Some(scan.save(pool).unwrap());
+        scan.save(pool).unwrap();
         scan.path = Path::new("scans")
             .join(format!("{}.png", scan.id.unwrap()))
             .as_os_str()
@@ -141,9 +141,13 @@ impl ScannerManager {
             output.status, output.stdout, output.stderr
         );
 
-        scan.status = "COMPLETE".to_string();
-        scan.save(pool).unwrap();
+        if output.status.code().unwrap() != 0 {
+            scan.status = "FAILED".to_string();
+        } else {
+            scan.status = "COMPLETE".to_string();
+        }
 
-        scan.id.unwrap()
+        scan.save(pool).unwrap();
+        return scan.id.unwrap();
     }
 }
