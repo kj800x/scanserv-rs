@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     scanners::{ScannerInfo, ScannerManager},
-    scans,
+    scans::{self, Scan},
     simple_broker::SimpleBroker,
     AssetsDir,
 };
@@ -150,6 +150,25 @@ impl MutationRoot {
 
         scanner_manager
             .scan(&name, parameters, &pool, &assets_dir)
+            .await
+    }
+
+    async fn retry_scan(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+        parameters: String,
+        scan_id: i32,
+    ) -> i32 {
+        let scanner_manager = ctx.data_unchecked::<ScannerManager>();
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+        let assets_dir = ctx.data_unchecked::<AssetsDir>();
+        let parameters: HashMap<String, String> = serde_json::from_str(&parameters).unwrap();
+
+        let scan = Scan::load(scan_id, &pool).unwrap();
+
+        scanner_manager
+            .retry(scan, &name, parameters, &pool, &assets_dir)
             .await
     }
 

@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::{process::Command, sync::Mutex};
 
-use crate::AssetsDir;
+use crate::{scans::Scan, AssetsDir};
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct ScannerInfo {
@@ -73,39 +73,13 @@ impl ScannerManager {
         }
     }
 
-    pub async fn scan(
-        &self,
+    async fn do_scan(
+        mut scan: Scan,
         name: &str,
         scan_arguments: HashMap<String, String>,
         pool: &r2d2::Pool<DuckdbConnectionManager>,
         assets_dir: &AssetsDir,
     ) -> i32 {
-        std::fs::create_dir_all(&assets_dir.0).unwrap();
-        std::fs::create_dir_all(&Path::new(&assets_dir.0).join("scans")).unwrap();
-
-        let mut scan = crate::scans::Scan::new(
-            "PENDING".to_string(),
-            Path::new("scans")
-                .join("tmp.png")
-                .as_os_str()
-                .to_str()
-                .unwrap()
-                .to_string(),
-            name.to_string(),
-            scan_arguments.clone(),
-            chrono::Utc::now(),
-        );
-
-        scan.save(pool).unwrap();
-        scan.path = Path::new("scans")
-            .join(format!("{}.png", scan.id.unwrap()))
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .to_string()
-            .into();
-        scan.save(pool).unwrap();
-
         let scan_path = scan.path.as_disk_path(&assets_dir.0);
 
         println!(
@@ -149,5 +123,60 @@ impl ScannerManager {
 
         scan.save(pool).unwrap();
         return scan.id.unwrap();
+    }
+
+    pub async fn retry(
+        &self,
+        mut scan: Scan,
+        name: &str,
+        scan_arguments: HashMap<String, String>,
+        pool: &r2d2::Pool<DuckdbConnectionManager>,
+        assets_dir: &AssetsDir,
+    ) -> i32 {
+        let revised_path = scan.path.as_revised_path();
+
+        scan.path = revised_path.clone();
+        scan.status = "PENDING".to_string();
+        scan.scanner = name.to_string();
+        scan.scan_parameters = scan_arguments.clone();
+        scan.save(pool).unwrap();
+
+        ScannerManager::do_scan(scan, name, scan_arguments, pool, assets_dir).await
+    }
+
+    pub async fn scan(
+        &self,
+        name: &str,
+        scan_arguments: HashMap<String, String>,
+        pool: &r2d2::Pool<DuckdbConnectionManager>,
+        assets_dir: &AssetsDir,
+    ) -> i32 {
+        std::fs::create_dir_all(&assets_dir.0).unwrap();
+        std::fs::create_dir_all(&Path::new(&assets_dir.0).join("scans")).unwrap();
+
+        let mut scan = Scan::new(
+            "PENDING".to_string(),
+            Path::new("scans")
+                .join("tmp.png")
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .to_string(),
+            name.to_string(),
+            scan_arguments.clone(),
+            chrono::Utc::now(),
+        );
+
+        scan.save(pool).unwrap();
+        scan.path = Path::new("scans")
+            .join(format!("{}.png", scan.id.unwrap()))
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .to_string()
+            .into();
+        scan.save(pool).unwrap();
+
+        ScannerManager::do_scan(scan, name, scan_arguments, pool, assets_dir).await
     }
 }

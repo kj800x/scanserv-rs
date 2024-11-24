@@ -36,6 +36,24 @@ impl Scan {
         }
     }
 
+    pub fn load(id: i32, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Result<Self> {
+        let conn = pool.get().unwrap();
+
+        conn.query_row(
+            "SELECT id, status, path, scanner, scan_parameters, scanned_at FROM scans WHERE id = ?",
+            params![id],
+            |row| {
+                Ok(Self {
+                    id: Some(row.get(0)?),
+                    status: row.get(1)?,
+                    path: row.get::<usize, String>(2)?.into(),
+                    scanner: row.get(3)?,
+                    scan_parameters: serde_json::from_str(&row.get::<usize, String>(4)?).unwrap(),
+                    scanned_at: row.get(5)?,
+                })
+            },
+        )
+    }
     pub fn save(&mut self, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Result<i32> {
         let conn = pool.get().unwrap();
 
