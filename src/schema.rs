@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     scanners::{ScannerInfo, ScannerManager},
@@ -61,16 +61,21 @@ impl QueryRoot {
         let conn = pool.get().unwrap();
 
         let mut stmt = conn
-            .prepare("SELECT id, status, path, scanned_at FROM scans")
+            .prepare("SELECT id, status, path, scanner, scan_parameters, scanned_at FROM scans")
             .unwrap();
 
         let scans = stmt
             .query_map([], |row| {
+                let scan_parameters: HashMap<String, String> =
+                    serde_json::from_str(&row.get::<usize, String>(4)?.to_owned()).unwrap();
+
                 Ok(scans::Scan {
                     id: row.get(0)?,
                     status: row.get(1)?,
-                    path: row.get(2)?,
-                    scanned_at: row.get(3)?,
+                    path: row.get::<usize, String>(2)?.into(),
+                    scanner: row.get(3)?,
+                    scan_parameters,
+                    scanned_at: row.get(5)?,
                 })
             })
             .unwrap()
@@ -117,11 +122,15 @@ impl MutationRoot {
         }
     }
 
-    async fn scan(&self, ctx: &Context<'_>, name: String) -> i32 {
+    async fn scan(&self, ctx: &Context<'_>, name: String, parameters: String) -> i32 {
         let scanner_manager = ctx.data_unchecked::<ScannerManager>();
         let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
         let assets_dir = ctx.data_unchecked::<AssetsDir>();
-        scanner_manager.scan(&name, &pool, &assets_dir).await
+        let parameters: HashMap<String, String> = serde_json::from_str(&parameters).unwrap();
+
+        scanner_manager
+            .scan(&name, parameters, &pool, &assets_dir)
+            .await
     }
 }
 

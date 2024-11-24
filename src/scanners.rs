@@ -2,6 +2,7 @@ use async_graphql::SimpleObject;
 use duckdb::DuckdbConnectionManager;
 use regex::Regex;
 use std::{
+    collections::HashMap,
     path::Path,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -75,6 +76,7 @@ impl ScannerManager {
     pub async fn scan(
         &self,
         name: &str,
+        scan_arguments: HashMap<String, String>,
         pool: &r2d2::Pool<DuckdbConnectionManager>,
         assets_dir: &AssetsDir,
     ) -> i32 {
@@ -89,6 +91,8 @@ impl ScannerManager {
                 .to_str()
                 .unwrap()
                 .to_string(),
+            name.to_string(),
+            scan_arguments.clone(),
             chrono::Utc::now(),
         );
 
@@ -98,19 +102,44 @@ impl ScannerManager {
             .as_os_str()
             .to_str()
             .unwrap()
-            .to_string();
+            .to_string()
+            .into();
         scan.save(pool).unwrap();
 
-        let _output = Command::new("scanimage")
+        let scan_path = scan.path.as_disk_path(&assets_dir.0);
+
+        println!(
+            "Running command: {:?}",
+            Command::new("scanimage")
+                .arg("--format")
+                .arg("png")
+                .arg("-d")
+                .arg(name)
+                .args(scan_arguments.iter().flat_map(|(k, v)| vec![k, v]))
+                .arg("-o")
+                .arg(scan_path.clone())
+        );
+
+        let output = Command::new("scanimage")
             .arg("--format")
             .arg("png")
             .arg("-d")
             .arg(name)
+            .args(scan_arguments.iter().flat_map(|(k, v)| vec![k, v]))
             .arg("-o")
-            .arg(Path::new(&assets_dir.0).join(scan.path.clone()))
-            .output()
+            .arg(scan_path)
+            .spawn()
+            .ok()
+            .unwrap()
+            .wait_with_output()
+            // .output()
             .await
             .unwrap();
+
+        println!(
+            "{}, {:?}, {:?}",
+            output.status, output.stdout, output.stderr
+        );
 
         scan.status = "COMPLETE".to_string();
         scan.save(pool).unwrap();

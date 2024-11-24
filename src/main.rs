@@ -1,3 +1,4 @@
+mod asset_path;
 mod migrations;
 mod scanners;
 mod scans;
@@ -47,10 +48,10 @@ async fn main() -> Result<(), std::io::Error> {
 
     migrate(&pool).await;
 
-    println!("Waiting for scanners to be loaded...");
+    // println!("Waiting for scanners to be loaded...");
 
     let scanner_manager = ScannerManager::new();
-    let scanners = scanner_manager.list_scanners().await;
+    // let scanners = scanner_manager.list_scanners().await;
 
     let schema = BooksSchema::build(QueryRoot, MutationRoot, SubscriptionRoot)
         .data(Storage::default())
@@ -73,7 +74,7 @@ async fn main() -> Result<(), std::io::Error> {
                 .index_file("index.html"),
         );
 
-    println!("Scanners: {:?}", scanners);
+    // println!("Scanners: {:?}", scanners);
     println!("GraphiQL IDE: http://localhost:8080/api/graphql");
 
     Server::new(TcpListener::bind("0.0.0.0:8080"))
