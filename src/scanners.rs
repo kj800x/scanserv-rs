@@ -82,9 +82,24 @@ impl ScannerManager {
     ) -> i32 {
         let scan_path = scan.path.as_disk_path(&assets_dir.0);
 
-        println!(
-            "Running command: {:?}",
-            Command::new("scanimage")
+        let mut output_status;
+        let mut attempts = 0;
+
+        loop {
+            attempts += 1;
+
+            println!(
+                "Running command: {:?}",
+                Command::new("scanimage")
+                    .arg("--format")
+                    .arg("png")
+                    .arg("-d")
+                    .arg(name)
+                    .args(scan_arguments.iter().flat_map(|(k, v)| vec![k, v]))
+                    .arg("-o")
+                    .arg(scan_path.clone())
+            );
+            let output = Command::new("scanimage")
                 .arg("--format")
                 .arg("png")
                 .arg("-d")
@@ -92,30 +107,28 @@ impl ScannerManager {
                 .args(scan_arguments.iter().flat_map(|(k, v)| vec![k, v]))
                 .arg("-o")
                 .arg(scan_path.clone())
-        );
+                .spawn()
+                .ok()
+                .unwrap()
+                .wait_with_output()
+                .await
+                .unwrap();
 
-        let output = Command::new("scanimage")
-            .arg("--format")
-            .arg("png")
-            .arg("-d")
-            .arg(name)
-            .args(scan_arguments.iter().flat_map(|(k, v)| vec![k, v]))
-            .arg("-o")
-            .arg(scan_path)
-            .spawn()
-            .ok()
-            .unwrap()
-            .wait_with_output()
-            // .output()
-            .await
-            .unwrap();
+            output_status = output.status.code().unwrap();
 
-        println!(
-            "{}, {:?}, {:?}",
-            output.status, output.stdout, output.stderr
-        );
+            println!(
+                "{}, {:?}, {:?}",
+                output.status, output.stdout, output.stderr
+            );
 
-        if output.status.code().unwrap() != 0 {
+            if (output_status == 0) || (attempts >= 3) {
+                break;
+            }
+
+            println!("Retrying scan");
+        }
+
+        if output_status != 0 {
             scan.status = "FAILED".to_string();
         } else {
             scan.status = "COMPLETE".to_string();
