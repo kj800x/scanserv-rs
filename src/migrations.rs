@@ -28,6 +28,17 @@ static MIGRATIONS: &[&str] = &[
         id INTEGER PRIMARY KEY DEFAULT nextval('seq_scan_dividers_id'),
         ts TIMESTAMP NOT NULL
     );",
+    r"
+    CREATE SEQUENCE seq_scan_groups_id START 1;
+    ",
+    r"
+    CREATE TABLE IF NOT EXISTS scan_groups (
+        id INTEGER PRIMARY KEY DEFAULT nextval('seq_scan_groups_id'),
+        title TEXT NOT NULL
+    );",
+    r"
+    ALTER TABLE scans ADD COLUMN scan_group_id INTEGER;
+    ",
 ];
 
 pub async fn migrate(r2d2_pool: &r2d2::Pool<DuckdbConnectionManager>) {

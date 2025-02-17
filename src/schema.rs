@@ -7,6 +7,7 @@ use crate::{
     AssetsDir,
 };
 use async_graphql::{Context, Enum, Object, Result, Schema, Subscription, ID};
+use duckdb::params;
 use futures_util::{lock::Mutex, Stream, StreamExt};
 use slab::Slab;
 
@@ -61,7 +62,7 @@ impl QueryRoot {
         let conn = pool.get().unwrap();
 
         let mut stmt = conn
-            .prepare("SELECT id, status, path, scanner, scan_parameters, scanned_at FROM scans")
+            .prepare("SELECT id, status, path, scanner, scan_parameters, scanned_at, scan_group_id FROM scans")
             .unwrap();
 
         let scans = stmt
@@ -76,6 +77,11 @@ impl QueryRoot {
                     scanner: row.get(3)?,
                     scan_parameters,
                     scanned_at: row.get(5)?,
+                    group: if row.get::<usize, Option<i32>>(6)?.is_some() {
+                        Some(crate::scans::ScanGroup::load(row.get(6)?, &pool).unwrap())
+                    } else {
+                        None
+                    },
                 })
             })
             .unwrap()
@@ -180,6 +186,28 @@ impl MutationRoot {
         crate::scan_dividers::ScanDivider::new(ts)
             .save(&pool)
             .unwrap()
+    }
+
+    async fn commit_group(&self, ctx: &Context<'_>, scan_ids: Vec<i32>, title: String) -> i32 {
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+
+        let conn = pool.get().unwrap();
+
+        let mut stmt = conn
+            .prepare("INSERT INTO scan_groups (title) VALUES (?) RETURNING id")
+            .unwrap();
+
+        let id: i32 = stmt.query_row([title], |row| row.get(0)).unwrap();
+
+        for scan_id in scan_ids {
+            conn.execute(
+                "UPDATE scans SET scan_group_id = ? WHERE id = ?",
+                params![id, scan_id],
+            )
+            .unwrap();
+        }
+
+        id
     }
 }
 

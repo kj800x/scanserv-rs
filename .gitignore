@@ -2,3 +2,4 @@
 db*
 data/
 assets/
+*-archive.tar.gz

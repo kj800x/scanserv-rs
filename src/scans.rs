@@ -8,6 +8,28 @@ use duckdb::{params, DuckdbConnectionManager};
 use crate::asset_path::AssetPath;
 
 #[derive(Debug, Clone, SimpleObject)]
+pub struct ScanGroup {
+    pub id: i32,
+    pub title: String,
+}
+
+impl ScanGroup {
+    pub fn new(id: i32, title: String) -> Self {
+        Self { id, title }
+    }
+
+    pub fn load(id: i32, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Result<Self> {
+        let conn = pool.get().unwrap();
+
+        conn.query_row(
+            "SELECT id, title FROM scan_groups WHERE id = ?",
+            params![id],
+            |row| Ok(Self::new(row.get(0)?, row.get(1)?)),
+        )
+    }
+}
+
+#[derive(Debug, Clone, SimpleObject)]
 pub struct Scan {
     pub id: Option<i32>,
     pub status: String,
@@ -16,6 +38,7 @@ pub struct Scan {
     pub scan_parameters: HashMap<String, String>,
     #[graphql(flatten)]
     pub path: AssetPath,
+    pub group: Option<ScanGroup>,
 }
 
 impl Scan {
@@ -33,6 +56,7 @@ impl Scan {
             scanner,
             scan_parameters,
             scanned_at,
+            group: None,
         }
     }
 
@@ -40,7 +64,7 @@ impl Scan {
         let conn = pool.get().unwrap();
 
         conn.query_row(
-            "SELECT id, status, path, scanner, scan_parameters, scanned_at FROM scans WHERE id = ?",
+            "SELECT id, status, path, scanner, scan_parameters, scanned_at, scan_group_id FROM scans WHERE id = ?",
             params![id],
             |row| {
                 Ok(Self {
@@ -50,6 +74,11 @@ impl Scan {
                     scanner: row.get(3)?,
                     scan_parameters: serde_json::from_str(&row.get::<usize, String>(4)?).unwrap(),
                     scanned_at: row.get(5)?,
+                    group: if row.get::<usize, Option<i32>>(6)?.is_some() {
+                        Some(ScanGroup::load(row.get(6)?, pool)?)
+                    } else {
+                        None
+                    },
                 })
             },
         )
