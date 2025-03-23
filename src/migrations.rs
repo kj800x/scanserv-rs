@@ -39,6 +39,50 @@ static MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE scans ADD COLUMN scan_group_id INTEGER;
     ",
+    // New migrations for enhanced group model
+    r"
+    ALTER TABLE scan_groups ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    ",
+    r"
+    ALTER TABLE scan_groups ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    ",
+    r"
+    ALTER TABLE scan_groups ADD COLUMN status TEXT DEFAULT 'scanning';
+    ",
+    r"
+    ALTER TABLE scan_groups ADD COLUMN comment TEXT DEFAULT '';
+    ",
+    r"
+    ALTER TABLE scan_groups ADD COLUMN tags TEXT DEFAULT '[]';
+    ",
+    // New migrations for image editing features
+    r"
+    ALTER TABLE scans ADD COLUMN rotation INTEGER DEFAULT 0;
+    ",
+    r"
+    ALTER TABLE scans ADD COLUMN crop_coordinates TEXT DEFAULT NULL;
+    ",
+    r"
+    ALTER TABLE scans ADD COLUMN original_path TEXT;
+    ",
+    r"
+    ALTER TABLE scans ADD COLUMN edited_path TEXT;
+    ",
+    // Update existing scan records to set original_path = path
+    r"
+    UPDATE scans SET original_path = path WHERE original_path IS NULL;
+    ",
+    // Migrate existing dividers to create proper groups
+    r"
+    INSERT INTO scan_groups (title, status, created_at)
+    SELECT 'Untitled Group ' || d.id, 'scanning', d.ts
+    FROM scan_dividers d
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM scan_groups g
+        WHERE g.created_at = d.ts
+    );
+    ",
 ];
 
 pub async fn migrate(r2d2_pool: &r2d2::Pool<DuckdbConnectionManager>) {

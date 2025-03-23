@@ -22,6 +22,16 @@ pub struct ScannerManager {
     last_refreshed: Arc<Mutex<Instant>>,
 }
 
+// Add Clone implementation for ScannerManager
+impl Clone for ScannerManager {
+    fn clone(&self) -> Self {
+        Self {
+            cached: self.cached.clone(),
+            last_refreshed: self.last_refreshed.clone(),
+        }
+    }
+}
+
 // TODO, have this just refresh scanner data in the background on an interval
 impl ScannerManager {
     pub fn new() -> Self {
@@ -146,9 +156,9 @@ impl ScannerManager {
         pool: &r2d2::Pool<DuckdbConnectionManager>,
         assets_dir: &AssetsDir,
     ) -> i32 {
-        let revised_path = scan.path.as_revised_path();
+        let next_available_path = scan.path.get_next_available_path(&assets_dir.0);
 
-        scan.path = revised_path.clone();
+        scan.path = next_available_path;
         scan.status = "PENDING".to_string();
         scan.scanner = name.to_string();
         scan.scan_parameters = scan_arguments.clone();
@@ -181,13 +191,88 @@ impl ScannerManager {
         );
 
         scan.save(pool).unwrap();
-        scan.path = Path::new("scans")
-            .join(format!("{}.png", scan.id.unwrap()))
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .to_string()
-            .into();
+
+        // Sleep for 10 seconds for testing
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Generate a unique filename that doesn't exist on disk
+        let mut id = scan.id.unwrap();
+        let mut file_path;
+        let mut counter = 0;
+
+        loop {
+            let filename = if counter == 0 {
+                format!("{}.png", id)
+            } else {
+                format!("{}_{}.png", id, counter)
+            };
+
+            file_path = Path::new("scans")
+                .join(&filename)
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .to_string();
+
+            // Check if the file exists on disk
+            let full_path = Path::new(&assets_dir.0).join(&file_path);
+            if !full_path.exists() {
+                break;
+            }
+
+            // If it exists, increment counter and try again
+            counter += 1;
+        }
+
+        scan.path = file_path.into();
+        scan.save(pool).unwrap();
+
+        ScannerManager::do_scan(scan, name, scan_arguments, pool, assets_dir).await
+    }
+
+    // New method to complete a scan that has already been created
+    pub async fn complete_scan(
+        &self,
+        scan_id: i32,
+        name: &str,
+        scan_arguments: HashMap<String, String>,
+        pool: &r2d2::Pool<DuckdbConnectionManager>,
+        assets_dir: &AssetsDir,
+    ) -> i32 {
+        let mut scan = Scan::load(scan_id, pool).unwrap();
+
+        // For testing purposes, simulate a delay
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Generate a unique filename that doesn't exist on disk
+        let mut counter = 0;
+        let mut file_path;
+
+        loop {
+            let filename = if counter == 0 {
+                format!("{}.png", scan_id)
+            } else {
+                format!("{}_{}.png", scan_id, counter)
+            };
+
+            file_path = Path::new("scans")
+                .join(&filename)
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .to_string();
+
+            // Check if the file exists on disk
+            let full_path = Path::new(&assets_dir.0).join(&file_path);
+            if !full_path.exists() {
+                break;
+            }
+
+            // If it exists, increment counter and try again
+            counter += 1;
+        }
+
+        scan.path = file_path.into();
         scan.save(pool).unwrap();
 
         ScannerManager::do_scan(scan, name, scan_arguments, pool, assets_dir).await

@@ -22,6 +22,7 @@ use poem::{
 use scanners::ScannerManager;
 use schema::{BooksSchema, MutationRoot, QueryRoot, Storage, SubscriptionRoot};
 
+#[derive(Clone)]
 pub struct AssetsDir(String);
 
 #[handler]
