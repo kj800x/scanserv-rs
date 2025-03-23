@@ -316,35 +316,14 @@ impl MutationRoot {
         let assets_dir = ctx.data_unchecked::<AssetsDir>().clone();
         let parameters: HashMap<String, String> = serde_json::from_str(&parameters).unwrap();
 
-        // Load the original scan to get its group information
-        let original_scan = Scan::load(scan_id, &pool).unwrap();
-        let original_group_id = original_scan.group.as_ref().map(|g| g.id);
+        // Load the existing scan
+        let mut scan = Scan::load(scan_id, &pool).unwrap();
 
-        // Create a new scan with PENDING status and a placeholder path
-        std::fs::create_dir_all(&assets_dir.0).unwrap();
-        std::fs::create_dir_all(&Path::new(&assets_dir.0).join("scans")).unwrap();
-
-        let mut new_scan = Scan::new(
-            "PENDING".to_string(),
-            Path::new("scans")
-                .join("tmp.png")
-                .as_os_str()
-                .to_str()
-                .unwrap()
-                .to_string(),
-            name.clone(),
-            parameters.clone(),
-            chrono::Utc::now(),
-        );
-
-        // Save scan to get an ID
-        new_scan.save(&pool).unwrap();
-        let new_scan_id = new_scan.id.unwrap();
-
-        // If the original scan had a group, associate the new scan with the same group
-        if let Some(group_id) = original_group_id {
-            new_scan.set_group(group_id, &pool).unwrap();
-        }
+        // Update the scan with PENDING status and the new scanner name
+        scan.status = "PENDING".to_string();
+        scan.scanner = name.clone();
+        scan.scan_parameters = parameters.clone();
+        scan.save(&pool).unwrap();
 
         // Create clones for the async task
         let name_clone = name.clone();
@@ -353,11 +332,11 @@ impl MutationRoot {
         let pool_clone = pool.clone();
         let scanner_manager_clone = scanner_manager.clone();
 
-        // Start the actual scanning process in the background
+        // Start the scanning process in the background with the existing scan ID
         tokio::spawn(async move {
             scanner_manager_clone
                 .complete_scan(
-                    new_scan_id,
+                    scan_id,
                     &name_clone,
                     parameters_clone,
                     &pool_clone,
@@ -366,8 +345,8 @@ impl MutationRoot {
                 .await;
         });
 
-        // Return the new scan ID immediately to the client
-        new_scan_id
+        // Return the same scan ID
+        scan_id
     }
 
     async fn add_divider(&self, ctx: &Context<'_>) -> i32 {

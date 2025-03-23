@@ -192,9 +192,6 @@ impl ScannerManager {
 
         scan.save(pool).unwrap();
 
-        // Sleep for 10 seconds for testing
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
         // Generate a unique filename that doesn't exist on disk
         let mut id = scan.id.unwrap();
         let mut file_path;
@@ -248,11 +245,25 @@ impl ScannerManager {
         let mut counter = 0;
         let mut file_path;
 
+        // For rescans, we want to keep the same base name but modify the suffix
+        // so we check if this is a rescan by looking at the original_path
+        let base_name = if scan.original_path.is_some() {
+            // This is a rescan, get the original file base name
+            let original_path = scan.original_path.as_ref().unwrap();
+            let original_path_str = original_path.as_relative_path();
+            let filename = original_path_str.split('/').last().unwrap();
+            let parts: Vec<&str> = filename.split('.').collect();
+            parts.get(0).unwrap().to_string()
+        } else {
+            // This is a new scan, use the scan ID as the base name
+            scan_id.to_string()
+        };
+
         loop {
             let filename = if counter == 0 {
-                format!("{}.png", scan_id)
+                format!("{}.png", base_name)
             } else {
-                format!("{}_{}.png", scan_id, counter)
+                format!("{}_{}.png", base_name, counter)
             };
 
             file_path = Path::new("scans")
@@ -272,6 +283,12 @@ impl ScannerManager {
             counter += 1;
         }
 
+        // If this is the first scan, set the original_path
+        if scan.original_path.is_none() {
+            scan.original_path = Some(file_path.clone().into());
+        }
+
+        // Update the path for the current scan
         scan.path = file_path.into();
         scan.save(pool).unwrap();
 
