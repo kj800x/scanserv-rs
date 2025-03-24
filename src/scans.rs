@@ -20,26 +20,6 @@ pub struct ScanGroup {
 }
 
 impl ScanGroup {
-    pub fn new(
-        id: i32,
-        title: String,
-        status: String,
-        comment: String,
-        tags: Vec<String>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
-        Self {
-            id,
-            title,
-            created_at,
-            updated_at,
-            status,
-            comment,
-            tags,
-        }
-    }
-
     pub fn create(title: String, status: String) -> Self {
         let now = Utc::now();
         Self {
