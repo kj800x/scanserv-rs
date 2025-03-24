@@ -142,6 +142,7 @@ impl QueryRoot {
                 status: row.get(4)?,
                 comment: row.get(5)?,
                 tags,
+                scans: Scan::load_all_by_group(row.get(0)?, &pool),
             })
         };
 
@@ -197,6 +198,40 @@ impl QueryRoot {
             .collect();
 
         scans
+    }
+
+    async fn incomplete_groups(&self, ctx: &Context<'_>) -> Vec<ScanGroup> {
+        let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
+        let conn = pool.get().unwrap();
+
+        // First, get all non-finalized groups (status = 'scanning')
+        let sql = "SELECT id, title, created_at, updated_at, status, comment, tags FROM scan_groups WHERE status != 'finalized' ORDER BY created_at ASC";
+
+        let mut stmt = conn.prepare(sql).unwrap();
+
+        let row_mapper = |row: &duckdb::Row| -> duckdb::Result<crate::scans::ScanGroup> {
+            let tags_json: String = row.get(6)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+
+            Ok(crate::scans::ScanGroup {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+                status: row.get(4)?,
+                comment: row.get(5)?,
+                tags,
+                scans: Scan::load_all_by_group(row.get(0)?, &pool),
+            })
+        };
+
+        let groups: Vec<crate::scans::ScanGroup> = stmt
+            .query_map([], row_mapper)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+
+        groups
     }
 }
 
@@ -359,10 +394,10 @@ impl MutationRoot {
             .unwrap()
     }
 
-    async fn create_group(&self, ctx: &Context<'_>, title: String, status: String) -> i32 {
+    async fn create_group(&self, ctx: &Context<'_>, status: String) -> i32 {
         let pool = ctx.data_unchecked::<r2d2::Pool<crate::DuckdbConnectionManager>>();
 
-        let mut group = ScanGroup::create(title, status);
+        let mut group = ScanGroup::create(status);
         group.save(&pool).unwrap()
     }
 

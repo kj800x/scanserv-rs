@@ -17,19 +17,21 @@ pub struct ScanGroup {
     pub status: String,
     pub comment: String,
     pub tags: Vec<String>,
+    pub scans: Vec<Scan>,
 }
 
 impl ScanGroup {
-    pub fn create(title: String, status: String) -> Self {
+    pub fn create(status: String) -> Self {
         let now = Utc::now();
         Self {
             id: 0, // Will be set on save
-            title,
+            title: "".to_string(),
             created_at: now,
             updated_at: now,
             status,
             comment: String::new(),
             tags: Vec::new(),
+            scans: Vec::new(),
         }
     }
 
@@ -43,6 +45,8 @@ impl ScanGroup {
                 let tags_json: String = row.get(6)?;
                 let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
 
+                let scans = Scan::load_all_by_group(id, pool);
+
                 Ok(Self {
                     id: row.get(0)?,
                     title: row.get(1)?,
@@ -51,6 +55,7 @@ impl ScanGroup {
                     status: row.get(4)?,
                     comment: row.get(5)?,
                     tags,
+                    scans,
                 })
             },
         )
@@ -262,5 +267,41 @@ impl Scan {
                 std::io::Error::new(std::io::ErrorKind::Other, "Scan not saved yet"),
             )))
         }
+    }
+
+    pub fn load_all_by_group(id: i32, pool: &r2d2::Pool<DuckdbConnectionManager>) -> Vec<Scan> {
+        let conn = pool.get().unwrap();
+
+        let sql = "SELECT id, status, path, scanner, scan_parameters, scanned_at, rotation, crop_coordinates, original_path, edited_path FROM scans WHERE scan_group_id = ?";
+
+        let mut stmt = conn.prepare(sql).unwrap();
+
+        let row_mapper = |row: &duckdb::Row| -> duckdb::Result<Scan> {
+            let path: String = row.get(2)?;
+            let original_path: Option<String> = row.get(8)?;
+            let edited_path: Option<String> = row.get(9)?;
+
+            Ok(Scan {
+                id: Some(row.get(0)?),
+                status: row.get(1)?,
+                path: path.into(),
+                scanner: row.get(3)?,
+                scan_parameters: serde_json::from_str(&row.get::<usize, String>(4)?).unwrap(),
+                scanned_at: row.get(5)?,
+                rotation: row.get(6)?,
+                crop_coordinates: row.get(7)?,
+                original_path: original_path.map(|p| p.into()),
+                edited_path: edited_path.map(|p| p.into()),
+                group: None, // TODO: This is wrong?
+            })
+        };
+
+        let scans: Vec<Scan> = stmt
+            .query_map([id], row_mapper)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+
+        scans
     }
 }
