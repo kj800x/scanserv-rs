@@ -50,10 +50,15 @@ async fn main() -> Result<(), std::io::Error> {
 
     migrate(&pool).await;
 
-    // println!("Waiting for scanners to be loaded...");
-
     let scanner_manager = ScannerManager::new();
-    // let scanners = scanner_manager.list_scanners().await;
+    let scanner_manager_clone = scanner_manager.clone();
+    tokio::spawn(async move {
+        loop {
+            scanner_manager_clone.force_list_scanners().await;
+            println!("Refreshed scanners");
+            tokio::time::sleep(tokio::time::Duration::from_secs(600)).await;
+        }
+    });
 
     let schema = BooksSchema::build(QueryRoot, MutationRoot, SubscriptionRoot)
         .data(Storage::default())

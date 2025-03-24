@@ -76,7 +76,8 @@ impl ScannerManager {
 
     pub async fn list_scanners(&self) -> Vec<ScannerInfo> {
         let last_refreshed = *self.last_refreshed.lock().await;
-        if last_refreshed.elapsed() > Duration::from_secs(60) {
+        // FIXME: Come up with something even better, but this is fine for now
+        if last_refreshed.elapsed() > Duration::from_secs(60 * 10) {
             self.force_list_scanners().await
         } else {
             self.cached.lock().await.clone()
